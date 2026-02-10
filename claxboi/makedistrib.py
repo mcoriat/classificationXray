@@ -1,11 +1,13 @@
-### ----------------------------------------------
-# Usage: python makedistrib.py, python makedistrib.py [float between 0 and 1]
-# computes the distributions (normalized histograms) of each property and each class from the Golden Sample sources
-# distributions are smoothed unless you comment the line "d=dsm"
-# in test mode (when the variable "fraction" is set by the used in the command line or when testSample==1 in classify_montecarlo), use only a fraction of the GS and save the other part in a file used to test the classification (retrieval fractions, false positive rates)
-# see classify_montecarlo.py for more details
-# When equipart==1, the other part is tuned to respect the proportions of each class given by (nCO, nSTAR, nAGN)
-### ----------------------------------------------
+"""
+Compute KDE-smoothed probability distributions for each property and class.
+
+Estimates probability densities from the Golden Sample using kernel density
+estimation (KDE) with exponential kernels. Distributions are saved as .dat
+files for use by the Naive Bayes classifier (classify_new.py).
+
+When equipart is set, the training sample is partitioned to respect given
+class proportions, with the remainder saved for testing.
+"""
 
 import numpy as np
 import os
@@ -21,7 +23,7 @@ plotdistrib=0
 def make(SourcesCsv, properties, Classes=[0,1,2], equipart=False, fraction=1, plotdistrib=False,N=100,verbose=False,dirout='classif/distribtest/', custom_pty=[],dumb=False, scale=None):
 
     if dirout:
-        os.system('mkdir -p %s'%dirout)
+        os.makedirs(dirout, exist_ok=True)
     
     def get_peak(y):
         dy=y[1:]-y[:-1]
@@ -87,9 +89,9 @@ def make(SourcesCsv, properties, Classes=[0,1,2], equipart=False, fraction=1, pl
         dx=(x1-x0kde)/N
         try:
             Bfinal=np.linspace(x0-dx,x1+dx,int(N*(x1-x0)/(x1-x0kde)))
-        except:
+        except (ValueError, ZeroDivisionError):
             print(p,np.array(igoodClasses).shape,nD,((x0,x0kde),x1),dx,N, dumb)
-            print("Error")
+            print("Error computing bins for property %s" % p)
             sys.exit()
             
         #print(x0,x1,x0kde,p)
@@ -115,7 +117,7 @@ def make(SourcesCsv, properties, Classes=[0,1,2], equipart=False, fraction=1, pl
             kde=KernelDensity(bandwidth=(x1-x0kde)/(5*len(Data)**(1/5)), kernel='exponential') #rule of thumb
             try:
                 kde.fit(Data[ind][:,None])
-            except:
+            except (ValueError, IndexError):
                 print("Error: property %s does not contain any value for class %s"%(p,Classes[ic]))
                 sys.exit()
                     

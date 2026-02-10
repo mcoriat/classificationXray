@@ -1,4 +1,4 @@
-#!/home/hugo/anaconda3/bin/python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Thu Jul 22 18:55:39 2021
@@ -7,11 +7,14 @@ Created on Thu Jul 22 18:55:39 2021
 """
 
 import os
+import subprocess
+import shutil
 from astropy.table import Table, vstack, hstack
 from sys import exit
 import numpy as np
 import sys
-os.chdir('/home/htranin/')
+
+# os.chdir removed — use the working directory from which the script is launched
 
 #####
 #CDS catalogues [optical, infrared] to be matched with the X-ray catalogue
@@ -52,7 +55,7 @@ param = ' '.join(list(np.array([skip_actual,skip_cds,skip_nway,nonmatchonly,radi
 
 
 #Tune nway calibrate cutoff to return a text file
-path = os.popen("which nway-calibrate-cutoff.py").read()[:-1]
+path = subprocess.run(["which", "nway-calibrate-cutoff.py"], capture_output=True, text=True).stdout.strip()
 if path=="":
     print("error in the installation of nway. Please check that nway is well installed")
     exit()
@@ -230,7 +233,7 @@ if __name__ == "__main__":
                 input_table = input_table[id_c1,ra_c1,dec_c1,ra_c1+'_fake',dec_c1+'_fake',err_c1,fx_c1]
             else:
                 input_table = input_table[id_c1,ra_c1,dec_c1,err_c1,fx_c1]
-        except:
+        except (KeyError, SystemExit):
             if ra_c1+'_fake' in input_table.colnames and dec_c1+'_fake' in input_table.colnames:
                 input_table = input_table[id_c1,ra_c1,dec_c1,ra_c1+'_fake',dec_c1+'_fake',err_c1]
             else:
@@ -293,15 +296,19 @@ if __name__ == "__main__":
                 cdsout_fname = "%s_near_%s.fits"%(cds_name,xname)
                 try:
                     skip_this = (os.path.isfile(cdsout_fname) and Table.read(cdsout_fname).meta['PAR_NWAY']==param)
-                except:
+                except (KeyError, OSError):
                     skip_this = 0
                 
                 
                 if not(skip_this):
                     if not(skip_cds):
-                        cmd='stilts cdsskymatch in="%s" out="%s" ra="%s" dec="%s"  cdstable="%s" find=all  radius=%.1f'%(input_fname, 'result.fits', ra_c1, dec_c1, cds_tables[iwv][icds],radius*1.25)
-                        print(cmd)
-                        read=os.popen(cmd).read() 
+                        cmd = ['stilts', 'cdsskymatch',
+                               'in=%s' % input_fname, 'out=result.fits',
+                               'ra=%s' % ra_c1, 'dec=%s' % dec_c1,
+                               'cdstable=%s' % cds_tables[iwv][icds],
+                               'find=all', 'radius=%.1f' % (radius*1.25)]
+                        print(' '.join(cmd))
+                        subprocess.run(cmd, check=True)
                         
                     
                     ##First run on actual positions
@@ -314,19 +321,21 @@ if __name__ == "__main__":
                         result[ra_c2].name = "RA"
                         result[dec_c2].name = "DEC"
                         result.remove_columns([c for c in result.colnames if not(c.lower() in [id_c2.lower()]+optircolnames)])
-                        result.write('result.fits', overwrite="True")
+                        result.write('result.fits', overwrite=True)
                     else:
                         ra_c2, dec_c2 = "RA", "DEC"
                     
                     if not(skip_cds):
                         if os.path.isfile(cdsout_fname):
                             os.remove(cdsout_fname)                       
-                        cmd='stilts tmatch1 in="result.fits" matcher="exact" values="%s" action="keep1" out="%s"'%(id_c2,cdsout_fname)
-                        print(cmd)
-                        read=os.popen(cmd).read()
+                        cmd = ['stilts', 'tmatch1',
+                               'in=result.fits', 'matcher=exact',
+                               'values=%s' % id_c2, 'action=keep1',
+                               'out=%s' % cdsout_fname]
+                        print(' '.join(cmd))
+                        subprocess.run(cmd, check=True)
                         if not(os.path.isfile(cdsout_fname)):
-                            cmd='cp result.fits %s'%cdsout_fname
-                            read=os.popen(cmd).read()
+                            shutil.copy2('result.fits', cdsout_fname)
                         # do magnitude calibration between catalogues
                         mag_computations(cds_name, cdsout_fname)
                         # restrict to a few columns
@@ -335,9 +344,13 @@ if __name__ == "__main__":
                         result.meta.update({"PAR_NWAY":param})
                         result.write(cdsout_fname,overwrite=True)
                     if nonmatchonly:
-                        cmd='stilts tmatch2 out="%s" matcher="sky" params="15" values1="%s %s" values2="%s %s" find="best1" in1="%s" in2="aux.fits"'%(cdsout_fname, ra_c2,dec_c2,ra_c4,dec_c4,cdsout_fname)
-                        print(cmd)
-                        read=os.popen(cmd).read()
+                        cmd = ['stilts', 'tmatch2',
+                               'out=%s' % cdsout_fname, 'matcher=sky',
+                               'params=15', 'values1=%s %s' % (ra_c2, dec_c2),
+                               'values2=%s %s' % (ra_c4, dec_c4),
+                               'find=best1', 'in1=%s' % cdsout_fname, 'in2=aux.fits']
+                        print(' '.join(cmd))
+                        subprocess.run(cmd, check=True)
                         result = Table.read(cdsout_fname)
                         result.remove_columns(result.colnames[-len(aux_new.colnames)+3:])
                         result.meta.update({"PAR_NWAY":param})
@@ -348,19 +361,21 @@ if __name__ == "__main__":
                 #Run Nway
                 try:
                     skip_this = 0#(os.path.isfile('example-%s-%s.fits'%(cds_name,xname)) and Table.read('example-%s-%s.fits'%(cds_name,xname)).meta['PAR_NWAY']==param)
-                except:
+                except (KeyError, OSError):
                     skip_this = 0
-                
-                
+
+
                 if not(skip_nway) and not(skip_this):
-                    cmd='nway-write-header.py %s %s %.2f'%(input_fname,xname,coverage)
-                    read=os.popen(cmd).read()
-                    cmd='nway-write-header.py %s %s %.2f'%(cdsout_fname,cds_name,cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds])
-                    read=os.popen(cmd).read()
-                    
-                    cmd='nway.py %s :%s %s 0.1 --out=example-%s-%s.fits --radius %.1f --mag %s:%s auto'%(input_fname, err_c1, cdsout_fname, cds_name, xname, radius, cds_name.upper(), ["Rmag","W1mag"][iwv])
-                    print(cmd)
-                    read=os.popen(cmd).read()
+                    subprocess.run(['nway-write-header.py', input_fname, xname, '%.2f' % coverage], check=True)
+                    subprocess.run(['nway-write-header.py', cdsout_fname, cds_name,
+                                    '%.2f' % (cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds])], check=True)
+
+                    cmd = ['nway.py', input_fname, ':%s' % err_c1, cdsout_fname, '0.1',
+                           '--out=example-%s-%s.fits' % (cds_name, xname),
+                           '--radius', '%.1f' % radius,
+                           '--mag', '%s:%s' % (cds_name.upper(), ["Rmag","W1mag"][iwv]), 'auto']
+                    print(' '.join(cmd))
+                    subprocess.run(cmd, check=True)
                     result = Table.read('example-%s-%s.fits'%(cds_name,xname))
                     result.meta.update({"PAR_NWAY":param})
                     result.write('example-%s-%s.fits'%(cds_name,xname),overwrite=True)
@@ -371,14 +386,19 @@ if __name__ == "__main__":
                 cdsout_fname2 = cdsout_fname.replace('.fits','-fake.fits')
                 try:
                     skip_this = 0#(os.path.isfile(cdsout_fname2) and Table.read(cdsout_fname2).meta['PAR_NWAY']==param)
-                except:
+                except (KeyError, OSError):
                     skip_this = 0
                 if not(skip_this):
                     ##Same on fake positions
                     if not(skip_cds):
-                        cmd='stilts cdsskymatch in="%s" ra="%s" dec="%s" cdstable="%s" find=all out="result-fake.fits" radius=%.1f'%(input_fname, ra_c1+'_fake', dec_c1+'_fake', cds_tables[iwv][icds],radius*1.25)
-                        print(cmd)
-                        read=os.popen(cmd).read()
+                        cmd = ['stilts', 'cdsskymatch',
+                               'in=%s' % input_fname,
+                               'ra=%s_fake' % ra_c1, 'dec=%s_fake' % dec_c1,
+                               'cdstable=%s' % cds_tables[iwv][icds],
+                               'find=all', 'out=result-fake.fits',
+                               'radius=%.1f' % (radius*1.25)]
+                        print(' '.join(cmd))
+                        subprocess.run(cmd, check=True)
                     #Remove duplicates
                     result = Table.read("result-fake.fits")
                     print("Fake match terminated with success")
@@ -389,19 +409,21 @@ if __name__ == "__main__":
                         result[ra_c2].name = "RA"
                         result[dec_c2].name = "DEC"
                         result.remove_columns([c for c in result.colnames if not(c.lower() in [id_c2.lower()]+optircolnames)])
-                        result.write('result-fake.fits', overwrite="True")
+                        result.write('result-fake.fits', overwrite=True)
                     else:
                         ra_c2, dec_c2 = "RA", "DEC"
                     
                     if not(skip_cds):
                         if os.path.isfile(cdsout_fname2):
                             os.remove(cdsout_fname2)
-                        cmd='stilts tmatch1 in="result-fake.fits" matcher="exact" values="%s" action="keep1" out="%s"'%(id_c2,cdsout_fname2)
-                        print(cmd)
-                        read=os.popen(cmd).read()
+                        cmd = ['stilts', 'tmatch1',
+                               'in=result-fake.fits', 'matcher=exact',
+                               'values=%s' % id_c2, 'action=keep1',
+                               'out=%s' % cdsout_fname2]
+                        print(' '.join(cmd))
+                        subprocess.run(cmd, check=True)
                         if not(os.path.isfile(cdsout_fname2)):
-                            cmd='cp result-fake.fits %s'%cdsout_fname2
-                            read=os.popen(cmd).read()
+                            shutil.copy2('result-fake.fits', cdsout_fname2)
                         mag_computations(cds_name, cdsout_fname2)
                         # restrict to a few columns
                         result = Table.read(cdsout_fname2)
@@ -409,9 +431,13 @@ if __name__ == "__main__":
                         result.meta.update({"PAR_NWAY":param})
                         result.write(cdsout_fname2,overwrite=True)
                     if nonmatchonly:
-                        cmd = 'stilts tmatch2 out="%s" matcher="sky" params="15" values1="%s %s" values2="%s %s" find="best1" in1="%s" in2="aux.fits"'%(cdsout_fname2, ra_c2,dec_c2,ra_c4+'_fake',dec_c4+'_fake',cdsout_fname2)
-                        print(cmd)
-                        read=os.popen(cmd).read()
+                        cmd = ['stilts', 'tmatch2',
+                               'out=%s' % cdsout_fname2, 'matcher=sky',
+                               'params=15', 'values1=%s %s' % (ra_c2, dec_c2),
+                               'values2=%s_fake %s_fake' % (ra_c4, dec_c4),
+                               'find=best1', 'in1=%s' % cdsout_fname2, 'in2=aux.fits']
+                        print(' '.join(cmd))
+                        subprocess.run(cmd, check=True)
                         result = Table.read(cdsout_fname2)
                         result.remove_columns(result.colnames[-len(aux_new.colnames)+3:])
                         result.meta.update({"PAR_NWAY":param})
@@ -422,29 +448,38 @@ if __name__ == "__main__":
                 #Run Nway
                 skip_this = 0#(os.path.isfile('example-%s-%s-fake.fits'%(cds_name,xname)) and Table.read('example-%s-%s-fake.fits'%(cds_name,xname)).meta['PAR_NWAY']==param)
                 if not(skip_nway) and not(skip_this):
-                    cmd='nway-write-header.py %s %s %.2f'%(input_fname.replace('.fits','-fake.fits'),xname,coverage)
-                    read=os.popen(cmd).read()
-                    cmd='nway-write-header.py %s %s %.2f'%(cdsout_fname2,cds_name,cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds])
-                    read=os.popen(cmd).read()
-                    
+                    subprocess.run(['nway-write-header.py',
+                                    input_fname.replace('.fits', '-fake.fits'),
+                                    xname, '%.2f' % coverage], check=True)
+                    subprocess.run(['nway-write-header.py', cdsout_fname2, cds_name,
+                                    '%.2f' % (cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds])], check=True)
+
                     use_mag = 'bias_%s_%s'%(cds_name.upper(),['Rmag','W1mag'][iwv]) in Table.read('example-%s-%s.fits'%(cds_name,xname)).colnames
                     if use_mag:
-                        cmd='nway.py %s :%s %s 0.1 --out=example-%s-%s-fake.fits --radius %.1f --mag %s:%s %s_%s_fit.txt'%(input_fname.replace('.fits','-fake.fits'), err_c1, cdsout_fname2,
-                                                                                                                         cds_name, xname, radius, cds_name.upper(), ["Rmag","W1mag"][iwv], cds_name.upper(), ["Rmag","W1mag"][iwv])
+                        cmd = ['nway.py', input_fname.replace('.fits', '-fake.fits'),
+                               ':%s' % err_c1, cdsout_fname2, '0.1',
+                               '--out=example-%s-%s-fake.fits' % (cds_name, xname),
+                               '--radius', '%.1f' % radius,
+                               '--mag', '%s:%s' % (cds_name.upper(), ["Rmag","W1mag"][iwv]),
+                               '%s_%s_fit.txt' % (cds_name.upper(), ["Rmag","W1mag"][iwv])]
                     else:
-                        cmd='nway.py %s :%s %s 0.1 --out=example-%s-%s-fake.fits --radius %.1f'%(input_fname.replace('.fits','-fake.fits'), err_c1, cdsout_fname2,
-                                                                                               cds_name, xname,radius)
-                    
-                    print(cmd)
-                    read=os.popen(cmd).read()
+                        cmd = ['nway.py', input_fname.replace('.fits', '-fake.fits'),
+                               ':%s' % err_c1, cdsout_fname2, '0.1',
+                               '--out=example-%s-%s-fake.fits' % (cds_name, xname),
+                               '--radius', '%.1f' % radius]
+
+                    print(' '.join(cmd))
+                    subprocess.run(cmd, check=True)
                     result = Table.read('example-%s-%s-fake.fits'%(cds_name,xname))
                     result.meta.update({"PAR_NWAY":param})
                     result.write('example-%s-%s-fake.fits'%(cds_name,xname),overwrite=True)
                     
                     ##Compare actual/fake with Nway to calibrate a p_any cutoff
-                    cmd='nway-calibrate-cutoff.py example-%s-%s.fits example-%s-%s-fake.fits'%(cds_name,xname,cds_name,xname)
-                    print(cmd)
-                    read=os.popen(cmd).read()
+                    cmd = ['nway-calibrate-cutoff.py',
+                           'example-%s-%s.fits' % (cds_name, xname),
+                           'example-%s-%s-fake.fits' % (cds_name, xname)]
+                    print(' '.join(cmd))
+                    subprocess.run(cmd, check=True)
                     
             print('removing secure matches')
             example_fname = 'example-%s-%s.fits'%(cds_name,xname)
