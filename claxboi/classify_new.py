@@ -119,8 +119,9 @@ if __name__ == "__main__":
                 for newcol in [c for c in initcat.colnames[1:] if ("hr" in c.lower() or "ext" in c.lower()) and not(c in t.colnames)]:
                     print(newcol)
                     t[newcol] = initcat[newcol][i2]
-                if "SC_EXTENT" in t.colnames:
-                    t['class'][t['SC_EXTENT']>0]= 6 #extended
+                extent_col = "SC_EXTENT" if "SC_EXTENT" in t.colnames else ("EXTENT" if "EXTENT" in t.colnames else None)
+                if extent_col is not None:
+                    t['class'][t[extent_col]>0]= 6 #extended
             else:
                 initcat = ascii.read(initfname)
                 srcid,i1,i2 = np.intersect1d(np.asarray(t[t.colnames[0]]),np.asarray(initcat[initcat.colnames[0]]), return_indices=1)
@@ -129,9 +130,10 @@ if __name__ == "__main__":
                 for newcol in [c for c in initcat.colnames[1:] if ("hr" in c.lower() or "ext" in c.lower()) and not(c in t.colnames)]:
                     print(newcol)
                     t[newcol] = initcat[newcol][i2]
-                if "SC_EXTENT" in t.colnames:
-                    t['class'][t['SC_EXTENT']>0]= 6 #extended
-            
+                extent_col = "SC_EXTENT" if "SC_EXTENT" in t.colnames else ("EXTENT" if "EXTENT" in t.colnames else None)
+                if extent_col is not None:
+                    t['class'][t[extent_col]>0]= 6 #extended
+
     inputfilename = filename.rsplit(".", 1)[0] + ".in"
     # file detailing how to handle each column
 

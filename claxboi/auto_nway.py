@@ -62,7 +62,7 @@ if path=="":
 else:
     f = open(path,"r")
     lines = f.readlines()
-    line = 'numpy.savetxt(args.realfile + "_p_any_cutoffquality.txt", numpy.array([%s,[cutoffs[numpy.argmin(abs(numpy.array(error_rate)-rate))] for rate in %s]]).T, fmt="%.3f", header="fp_rate p_any_cutoff")\n'%(nwaycutoffs,nwaycutoffs)
+    line = 'numpy.savetxt(args.realfile + "_p_any_cutoffquality.txt", numpy.array([%s,[cutoffs[numpy.argmin(abs(numpy.array(error_rate)-rate))] for rate in %s]]).T, fmt="%%.3f", header="fp_rate p_any_cutoff")\n'%(nwaycutoffs,nwaycutoffs)
     if not(line in lines):
         f.close()
         f = open(path,"a")
@@ -206,6 +206,9 @@ if __name__ == "__main__":
         elif xname[:4]=="4XMM":
             coverage = 1283       #DR10: 1192
             err_c1 = "SC_POSERR"
+        elif xname[:4]=="5XMM":
+            coverage = 1283       # TBD: update with actual 5XMM sky coverage
+            err_c1 = "RADEC_ERR"
         elif xname[:4]=="CSC2":
             coverage = 550
             err_c1 = "err_ellipse_r0"

@@ -15,7 +15,6 @@ from astropy.table import Table
 from astropy.io import fits
 import numpy as np
 from auto_nway import find_id_ra_dec
-import os
 import subprocess
 import sys
 
@@ -39,6 +38,8 @@ if __name__ == "__main__":
         err_c1 = 'Err63'
     elif xname[:4]=="4XMM":
         err_c1 = "SC_POSERR"
+    elif xname[:4]=="5XMM":
+        err_c1 = "RADEC_ERR"
     else:
         err_c1 = "err_halfmaj_63"
 
@@ -80,10 +81,13 @@ if __name__ == "__main__":
             i,i1,i2 = np.intersect1d(np.asarray(input_table[id_c1]),res[id_c1],return_indices=1)
             input_table['is%s'%typ][i1] += 2**vizcat[typ].index(cat)
 
-    cmd = 'stilts cdsskymatch in="%s" ra="%s" dec="%s" cdstable="simbad" find=best out="result.fits" radius=3 ocmd="select angDist<3*%s+%.1f"'%(
-                input_fname,ra_c1,dec_c1,err_c1,0.5)
-    os.system(cmd)
-    res = fits.open('result.fits')[1].data
+    cmd = ['stilts', 'cdsskymatch',
+           'in=%s' % input_fname, 'ra=%s' % ra_c1, 'dec=%s' % dec_c1,
+           'cdstable=simbad', 'find=best', 'out=result.fits', 'radius=3',
+           'ocmd=select angDist<3*%s+%.1f' % (err_c1, 0.5)]
+    subprocess.run(cmd, check=True)
+    with fits.open('result.fits') as hdu:
+        res = hdu[1].data
 
     for typ in simcat.keys():
         for typ2 in simcat[typ]:
@@ -106,7 +110,8 @@ if __name__ == "__main__":
         input_table['class'][input_table['qual']<2] = np.nan
 
 
-    if "SC_EXTENT" in input_table.colnames:
-        input_table['class'][input_table['SC_EXTENT']>0]= 6 #extended
+    extent_col = "SC_EXTENT" if "SC_EXTENT" in input_table.colnames else ("EXTENT" if "EXTENT" in input_table.colnames else None)
+    if extent_col is not None:
+        input_table['class'][input_table[extent_col]>0]= 6 #extended
 
     input_table.write(input_fname.rsplit('.', 1)[0] + '_typ.' + input_fname.rsplit('.', 1)[1], overwrite=True)
