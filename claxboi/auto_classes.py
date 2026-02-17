@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Build the training sample by identifying known source types via Vizier and Simbad.
+
+Cross-matches the X-ray catalog against external catalogs (AGN, Star, XRB, CV)
+from Vizier and Simbad, assigning class labels (0=AGN, 1=Star, 2=XRB, 3=CV,
+4=Nearby galaxy AGN, 5=Extragalactic XRB, 6=Extended).
+
+@author: htranin
+Created on Mon Dec  6 12:01:37 2021
+"""
+
+from astropy.table import Table
+from astropy.io import fits
+import numpy as np
+from auto_nway import find_id_ra_dec
+import subprocess
+import sys
+
+# os.chdir removed — use the working directory from which the script is launched
+
+
+if __name__ == "__main__":
+    # IDENTIFICATION
+
+
+    if len(sys.argv)>1:
+        input_fname = sys.argv[1]
+    else:
+        input_fname = '4XMM_with_counterparts_loc.fits'
+
+    xname = input_fname.replace('_',' ').replace('-',' ').split()[0]
+
+    input_table = Table.read(input_fname)
+    id_c1, ra_c1, dec_c1 = find_id_ra_dec(input_table,input_fname)
+    if xname=="2SXPS":
+        err_c1 = 'Err63'
+    elif xname[:4]=="4XMM":
+        err_c1 = "SC_POSERR"
+    elif xname[:4]=="5XMM":
+        err_c1 = "RADEC_ERR"
+    else:
+        err_c1 = "err_halfmaj_63"
+
+    ncol = len(input_table.colnames)
+
+    #List of external catalogues
+
+    vizcat = {'AGN':['J/ApJS/221/12/table1', 'VII/258/vv10'],#	VII/290/catalog
+              'Star':['I/280B/ascc'],
+              'XRB':['B/cb/lmxbdata','J/A+A/469/807/lmxb','J/ApJ/689/983/table6','J/ApJ/662/525/Xbin','J/A+A/533/A33/table6',
+                     'J/A+A/455/1165/table1','J/MNRAS/419/2095/hmxb','J/MNRAS/466/1019/table2',
+                     'J/ApJS/222/15/table12','J/A+A/587/A61/tablea1'],
+              'CV':['B/cb/cbdata','V/123A/cv']}
+
+    #vizref = {'AGN':['Miragn', 'Veron', 'Milliquas'],
+    #          'Star':['Ascc'],
+    #          'XRB':['Ritter','Liu07','Humphrey','Kundu','Zhang',
+    #                 'Liu06','Mineo','Sazonov',
+    #                 'Watchdog','Blackcat'],
+    #          'CV':['Ritter','Downes']}
+
+    simcat = {'AGN':['AGN','Seyfert_1','Seyfert_2','BLLac','Blazar','QSO'],
+              'Star':['YSO','TTau*','Em*','Orion_V*','PM*','WR*','RotV*','EB*'],
+              'XRB':['XB','LMXB','HMXB'],
+              'CV':['CataclyV*','Nova']}
+
+    for typ in vizcat.keys():
+        input_table['is%s'%typ] = 0
+        for cat in vizcat[typ]:
+            cmd = ['stilts', 'cdsskymatch',
+                   'in=%s' % input_fname, 'ra=%s' % ra_c1, 'dec=%s' % dec_c1,
+                   'cdstable=%s' % cat, 'find=best', 'out=result.fits', 'radius=3',
+                   'ocmd=select angDist<3*%s+%.1f' % (err_c1, 0.1+0.9*(typ in ("XRB", "CV")))]
+            subprocess.run(cmd, check=True)
+            with fits.open('result.fits') as hdu:
+                res = hdu[1].data
+            if cat=="VII/283/catalog":
+                res = res[[res['Qpct'][i]>80 and res[res.names[5+ncol]][i].replace('WISE','J')[0]=="J" for i in range(len(res))]]
+            i,i1,i2 = np.intersect1d(np.asarray(input_table[id_c1]),res[id_c1],return_indices=1)
+            input_table['is%s'%typ][i1] += 2**vizcat[typ].index(cat)
+
+    cmd = ['stilts', 'cdsskymatch',
+           'in=%s' % input_fname, 'ra=%s' % ra_c1, 'dec=%s' % dec_c1,
+           'cdstable=simbad', 'find=best', 'out=result.fits', 'radius=3',
+           'ocmd=select angDist<3*%s+%.1f' % (err_c1, 0.5)]
+    subprocess.run(cmd, check=True)
+    with fits.open('result.fits') as hdu:
+        res = hdu[1].data
+
+    for typ in simcat.keys():
+        for typ2 in simcat[typ]:
+            res2 = res[res['main_type']==typ2]
+            i,i1,i2 = np.intersect1d(np.asarray(input_table[id_c1]),res2[id_c1],return_indices=1)
+            input_table['is%s'%typ][i1] += 1024
+
+    input_table['class'] = np.nan
+    input_table['class'][np.logical_and(abs(input_table['isAGN']-512)!=512,input_table['isStar']+input_table['isXRB']+input_table['isCV']==0)] = 0 # AGN
+    input_table['class'][np.logical_and(abs(input_table['isStar']-512)!=512,input_table['isAGN']+input_table['isXRB']+input_table['isCV']==0)] = 1 # star                     
+    input_table['class'][np.logical_and(abs(input_table['isXRB']-512)!=512,input_table['isStar']+input_table['isAGN']+input_table['isCV']==0)] = 2 # XRB
+    input_table['class'][np.logical_and(abs(input_table['isCV']-512)!=512,input_table['isStar']+input_table['isXRB']+input_table['isAGN']==0)] = 3 # cataclysmic variable
+
+    if "Separation_GLADE" in input_table.colnames:
+        input_table['class'][np.logical_and(input_table['Separation_GLADE']<1.5,input_table['class']==0)] = 4 #nearby galaxy AGN or background AGN behind a foreground galaxy
+        input_table['class'][np.logical_and(input_table['Separation_GLADE']<1.5,input_table['class']==2)] = 5 #extragalactic XRB
+
+
+    if "qual" in input_table.colnames:
+        input_table['class'][input_table['qual']<2] = np.nan
+
+
+    extent_col = "SC_EXTENT" if "SC_EXTENT" in input_table.colnames else ("EXTENT" if "EXTENT" in input_table.colnames else None)
+    if extent_col is not None:
+        input_table['class'][input_table[extent_col]>0]= 6 #extended
+
+    input_table.write(input_fname.rsplit('.', 1)[0] + '_typ.' + input_fname.rsplit('.', 1)[1], overwrite=True)

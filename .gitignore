@@ -1,0 +1,12 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# Large data files — do not track in git
+*.fits
+*.csv
+*.dat
+
+# Keep small text reference files
+!claxboi/*_fit.txt
+!claxboi/*_cutoffquality.txt
