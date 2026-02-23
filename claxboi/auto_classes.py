@@ -28,9 +28,9 @@ if __name__ == "__main__":
     if len(sys.argv)>1:
         input_fname = sys.argv[1]
     else:
-        input_fname = '4XMM_with_counterparts_loc.fits'
+        input_fname = 'intermediates/5XMM_with_counterparts_loc.fits'
 
-    xname = input_fname.replace('_',' ').replace('-',' ').split()[0]
+    xname = input_fname.split('/')[-1].replace('_',' ').replace('-',' ').split()[0]
 
     input_table = Table.read(input_fname)
     id_c1, ra_c1, dec_c1 = find_id_ra_dec(input_table,input_fname)
@@ -71,10 +71,10 @@ if __name__ == "__main__":
         for cat in vizcat[typ]:
             cmd = ['stilts', 'cdsskymatch',
                    'in=%s' % input_fname, 'ra=%s' % ra_c1, 'dec=%s' % dec_c1,
-                   'cdstable=%s' % cat, 'find=best', 'out=result.fits', 'radius=3',
+                   'cdstable=%s' % cat, 'find=best', 'out=intermediates/result.fits', 'radius=3',
                    'ocmd=select angDist<3*%s+%.1f' % (err_c1, 0.1+0.9*(typ in ("XRB", "CV")))]
             subprocess.run(cmd, check=True)
-            with fits.open('result.fits') as hdu:
+            with fits.open('intermediates/result.fits') as hdu:
                 res = hdu[1].data
             if cat=="VII/283/catalog":
                 res = res[[res['Qpct'][i]>80 and res[res.names[5+ncol]][i].replace('WISE','J')[0]=="J" for i in range(len(res))]]
@@ -83,10 +83,10 @@ if __name__ == "__main__":
 
     cmd = ['stilts', 'cdsskymatch',
            'in=%s' % input_fname, 'ra=%s' % ra_c1, 'dec=%s' % dec_c1,
-           'cdstable=simbad', 'find=best', 'out=result.fits', 'radius=3',
+           'cdstable=simbad', 'find=best', 'out=intermediates/result.fits', 'radius=3',
            'ocmd=select angDist<3*%s+%.1f' % (err_c1, 0.5)]
     subprocess.run(cmd, check=True)
-    with fits.open('result.fits') as hdu:
+    with fits.open('intermediates/result.fits') as hdu:
         res = hdu[1].data
 
     for typ in simcat.keys():

@@ -31,9 +31,9 @@ if __name__ == "__main__":
     if len(sys.argv)>1:
         input_fname = sys.argv[1]
     else:
-        input_fname = "4XMM_with_counterparts.fits"
+        input_fname = "intermediates/5XMM_with_counterparts.fits"
 
-    xname = input_fname.replace('_',' ').replace('-',' ').split()[0]
+    xname = input_fname.split('/')[-1].replace('_',' ').replace('-',' ').split()[0]
     input_table = Table.read(input_fname)
 
     id_c1, ra_c1, dec_c1, fx_c1 = find_id_ra_dec(input_table, input_fname,
@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     # GLADE
     if not(skip_glade):    
-        glade_fname = "GLADE2016_corrected_0123.fits"
+        glade_fname = "../data/GLADE2016_corrected_0123.fits"
         glade_table = Table.read(glade_fname)
         ## RECENT UPDATE 11/1/22    
         #glade_table = glade_table[abs(glade_table['Dist']-175.5)<=174.5]
@@ -55,10 +55,10 @@ if __name__ == "__main__":
         glade_table[ra_c2].name = 'RA_GLADE'
         glade_table[dec_c2].name = 'DEC_GLADE'
         glade_table['Bmag'].name = 'Bmag_GLADE'
-        glade_table.write('aux_glade.fits', overwrite=True)
+        glade_table.write('intermediates/aux_glade.fits', overwrite=True)
         ## OLD WAY: params="300"
         cmd = ['stilts', 'tmatch2', 'matcher=skyellipse', 'find=best1', 'join=all1',
-               'out=%s' % output_fname, 'in1=%s' % input_fname, 'in2=aux_glade.fits',
+               'out=%s' % output_fname, 'in1=%s' % input_fname, 'in2=intermediates/aux_glade.fits',
                'params=60',
                'values1=%s %s %s %s %s' % (ra_c1, dec_c1, 1.5, 1.5, 0),
                'values2=%s %s %s %s %s' % ('RA_GLADE', 'DEC_GLADE', '1.265*R1', '1.265*R2', 'PA')]
@@ -106,15 +106,15 @@ if __name__ == "__main__":
     # GAIA EDR3 proper motions
     if not(skip_pm):
         res = Table.read(output_fname)
-        result = Table.read('example-%s-%s.fits'%('Gaia',xname))
-        cutoff = np.loadtxt('example-%s-%s.fits_p_any_cutoffquality.txt'
+        result = Table.read('nway_results/example-%s-%s.fits'%('Gaia',xname))
+        cutoff = np.loadtxt('nway_results/example-%s-%s.fits_p_any_cutoffquality.txt'
                             %('Gaia',xname))[-1,-1]
         result = result[(result['p_any']>max(cutoff,0.001))*(result['match_flag']==1)]
         result = result["%s_%s"%(xname,id_c1),"GAIA_pm"]
-        result.write("aux_Gaia.fits", overwrite=True)            
+        result.write("intermediates/aux_Gaia.fits", overwrite=True)            
         subprocess.run(['stilts', 'tmatch2', 'matcher=exact', 'find=best1', 'join=all1',
                          'ocmd=delcols %d' % (len(res.colnames)+1),
-                         'out=%s' % output_fname, 'in1=%s' % output_fname, 'in2=aux_Gaia.fits',
+                         'out=%s' % output_fname, 'in1=%s' % output_fname, 'in2=intermediates/aux_Gaia.fits',
                          'values1=%s' % id_c1, 'values2=%s_%s' % (xname, id_c1)],
                         check=True)
 
@@ -123,10 +123,10 @@ if __name__ == "__main__":
         output_table = Table.read(output_fname)
         cmd = ['stilts', 'cdsskymatch',
                'in=%s' % output_fname, 'ra=RA_Opt', 'dec=DEC_Opt',
-               'cdstable=Gaia EDR3 distances', 'find=best', 'out=result.fits', 'radius=2']
+               'cdstable=Gaia EDR3 distances', 'find=best', 'out=intermediates/result.fits', 'radius=2']
         print(' '.join(cmd))
         subprocess.run(cmd, check=True)
-        res = Table.read('result.fits')
+        res = Table.read('intermediates/result.fits')
         res['rpgeo'].name = 'GAIA_Dist'
         res.add_column(np.asarray(res[fx_c1])*4*np.pi*(np.asarray(res['GAIA_Dist'])*PC_TO_CM)**2,name="Lx_2")
         res["Lx_2"][res[fx_c1]==0] = np.nan

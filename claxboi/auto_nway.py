@@ -47,7 +47,7 @@ nonmatchonly = False #remove secure matches before matching again with another c
 if len(sys.argv)>1:
     input_fname = sys.argv[1]
 else:
-    input_fname = "classificationXray-main/data/4XMM_DR12cat_slim_v1.0.fits"   # IMPORTANT: first restrict the catalogue to less than ~10 columns to avoid kill    
+    input_fname = "../data/5XMM_DR15_stacked.fits"   # IMPORTANT: first restrict the catalogue to less than ~10 columns to avoid kill
 
 
 param = ' '.join(list(np.array([skip_actual,skip_cds,skip_nway,nonmatchonly,radius,input_fname]).astype(str)))
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     id_c3 = '%s_%s'%(xname,id_c1)
     ra_c4 = "AUX_%s"%ra_c1
     dec_c4 = "AUX_%s"%dec_c1
-    input_table.write("%s_with_counterparts.fits"%xname,overwrite=True)
+    input_table.write("intermediates/%s_with_counterparts.fits"%xname,overwrite=True)
     
     #Check prerequisites on the fake X-ray positions required to properly run Nway
     fake=False
@@ -289,14 +289,14 @@ if __name__ == "__main__":
         aux_new[dec_c1].name = dec_c4
         aux_new[ra_c1+'_fake'].name = ra_c4+'_fake'
         aux_new[dec_c1+'_fake'].name = dec_c4+'_fake'
-        aux_new.write('aux.fits',overwrite=True)
+        aux_new.write('intermediates/aux.fits',overwrite=True)
         print(len(aux))
         for icds in range(len(cds_tables[iwv])):
             #Do the external CDS crossmatch, to retrieve a subset close enough to X-ray sources
             cds_name = cds_names[iwv][icds]
             print("Working on %s..."%(cds_name))
             if not(skip_actual):
-                cdsout_fname = "%s_near_%s.fits"%(cds_name,xname)
+                cdsout_fname = "nway_results/%s_near_%s.fits"%(cds_name,xname)
                 try:
                     skip_this = (os.path.isfile(cdsout_fname) and Table.read(cdsout_fname).meta['PAR_NWAY']==param)
                 except (KeyError, OSError):
@@ -306,7 +306,7 @@ if __name__ == "__main__":
                 if not(skip_this):
                     if not(skip_cds):
                         cmd = ['stilts', 'cdsskymatch',
-                               'in=%s' % input_fname, 'out=result.fits',
+                               'in=%s' % input_fname, 'out=intermediates/result.fits',
                                'ra=%s' % ra_c1, 'dec=%s' % dec_c1,
                                'cdstable=%s' % cds_tables[iwv][icds],
                                'find=all', 'radius=%.1f' % (radius*1.25)]
@@ -316,15 +316,15 @@ if __name__ == "__main__":
                     
                     ##First run on actual positions
                     #Remove duplicates
-                    result = Table.read("result.fits")
+                    result = Table.read("intermediates/result.fits")
                     if not(skip_cds):
                         result.remove_columns(result.colnames[:len(aux.colnames)])
-                        id_c2, ra_c2, dec_c2 = find_id_ra_dec(result,'result.fits')
+                        id_c2, ra_c2, dec_c2 = find_id_ra_dec(result,'intermediates/result.fits')
                         print("Columns identified in CDS table:",id_c2, ra_c2, dec_c2)
                         result[ra_c2].name = "RA"
                         result[dec_c2].name = "DEC"
                         result.remove_columns([c for c in result.colnames if not(c.lower() in [id_c2.lower()]+optircolnames)])
-                        result.write('result.fits', overwrite=True)
+                        result.write('intermediates/result.fits', overwrite=True)
                     else:
                         ra_c2, dec_c2 = "RA", "DEC"
                     
@@ -332,13 +332,13 @@ if __name__ == "__main__":
                         if os.path.isfile(cdsout_fname):
                             os.remove(cdsout_fname)                       
                         cmd = ['stilts', 'tmatch1',
-                               'in=result.fits', 'matcher=exact',
+                               'in=intermediates/result.fits', 'matcher=exact',
                                'values=%s' % id_c2, 'action=keep1',
                                'out=%s' % cdsout_fname]
                         print(' '.join(cmd))
                         subprocess.run(cmd, check=True)
                         if not(os.path.isfile(cdsout_fname)):
-                            shutil.copy2('result.fits', cdsout_fname)
+                            shutil.copy2('intermediates/result.fits', cdsout_fname)
                         # do magnitude calibration between catalogues
                         mag_computations(cds_name, cdsout_fname)
                         # restrict to a few columns
@@ -351,7 +351,7 @@ if __name__ == "__main__":
                                'out=%s' % cdsout_fname, 'matcher=sky',
                                'params=15', 'values1=%s %s' % (ra_c2, dec_c2),
                                'values2=%s %s' % (ra_c4, dec_c4),
-                               'find=best1', 'in1=%s' % cdsout_fname, 'in2=aux.fits']
+                               'find=best1', 'in1=%s' % cdsout_fname, 'in2=intermediates/aux.fits']
                         print(' '.join(cmd))
                         subprocess.run(cmd, check=True)
                         result = Table.read(cdsout_fname)
@@ -363,7 +363,7 @@ if __name__ == "__main__":
                 
                 #Run Nway
                 try:
-                    skip_this = 0#(os.path.isfile('example-%s-%s.fits'%(cds_name,xname)) and Table.read('example-%s-%s.fits'%(cds_name,xname)).meta['PAR_NWAY']==param)
+                    skip_this = 0#(os.path.isfile('nway_results/example-%s-%s.fits'%(cds_name,xname)) and Table.read('nway_results/example-%s-%s.fits'%(cds_name,xname)).meta['PAR_NWAY']==param)
                 except (KeyError, OSError):
                     skip_this = 0
 
@@ -374,18 +374,18 @@ if __name__ == "__main__":
                                     '%.2f' % (cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds])], check=True)
 
                     cmd = ['nway.py', input_fname, ':%s' % err_c1, cdsout_fname, '0.1',
-                           '--out=example-%s-%s.fits' % (cds_name, xname),
+                           '--out=nway_results/example-%s-%s.fits' % (cds_name, xname),
                            '--radius', '%.1f' % radius,
                            '--mag', '%s:%s' % (cds_name.upper(), ["Rmag","W1mag"][iwv]), 'auto']
                     print(' '.join(cmd))
                     subprocess.run(cmd, check=True)
-                    result = Table.read('example-%s-%s.fits'%(cds_name,xname))
+                    result = Table.read('nway_results/example-%s-%s.fits'%(cds_name,xname))
                     result.meta.update({"PAR_NWAY":param})
-                    result.write('example-%s-%s.fits'%(cds_name,xname),overwrite=True)
+                    result.write('nway_results/example-%s-%s.fits'%(cds_name,xname),overwrite=True)
                     
                 
             if fake:
-                cdsout_fname = "%s_near_%s.fits"%(cds_name,xname)
+                cdsout_fname = "nway_results/%s_near_%s.fits"%(cds_name,xname)
                 cdsout_fname2 = cdsout_fname.replace('.fits','-fake.fits')
                 try:
                     skip_this = 0#(os.path.isfile(cdsout_fname2) and Table.read(cdsout_fname2).meta['PAR_NWAY']==param)
@@ -398,21 +398,21 @@ if __name__ == "__main__":
                                'in=%s' % input_fname,
                                'ra=%s_fake' % ra_c1, 'dec=%s_fake' % dec_c1,
                                'cdstable=%s' % cds_tables[iwv][icds],
-                               'find=all', 'out=result-fake.fits',
+                               'find=all', 'out=intermediates/result-fake.fits',
                                'radius=%.1f' % (radius*1.25)]
                         print(' '.join(cmd))
                         subprocess.run(cmd, check=True)
                     #Remove duplicates
-                    result = Table.read("result-fake.fits")
+                    result = Table.read("intermediates/result-fake.fits")
                     print("Fake match terminated with success")
                     if not(skip_cds):
                         result.remove_columns(result.colnames[:len(aux.colnames)])
-                        id_c2, ra_c2, dec_c2 = find_id_ra_dec(result,'result-fake.fits')
+                        id_c2, ra_c2, dec_c2 = find_id_ra_dec(result,'intermediates/result-fake.fits')
                         print("Columns identified in CDS table:",id_c2, ra_c2, dec_c2)
                         result[ra_c2].name = "RA"
                         result[dec_c2].name = "DEC"
                         result.remove_columns([c for c in result.colnames if not(c.lower() in [id_c2.lower()]+optircolnames)])
-                        result.write('result-fake.fits', overwrite=True)
+                        result.write('intermediates/result-fake.fits', overwrite=True)
                     else:
                         ra_c2, dec_c2 = "RA", "DEC"
                     
@@ -420,13 +420,13 @@ if __name__ == "__main__":
                         if os.path.isfile(cdsout_fname2):
                             os.remove(cdsout_fname2)
                         cmd = ['stilts', 'tmatch1',
-                               'in=result-fake.fits', 'matcher=exact',
+                               'in=intermediates/result-fake.fits', 'matcher=exact',
                                'values=%s' % id_c2, 'action=keep1',
                                'out=%s' % cdsout_fname2]
                         print(' '.join(cmd))
                         subprocess.run(cmd, check=True)
                         if not(os.path.isfile(cdsout_fname2)):
-                            shutil.copy2('result-fake.fits', cdsout_fname2)
+                            shutil.copy2('intermediates/result-fake.fits', cdsout_fname2)
                         mag_computations(cds_name, cdsout_fname2)
                         # restrict to a few columns
                         result = Table.read(cdsout_fname2)
@@ -438,7 +438,7 @@ if __name__ == "__main__":
                                'out=%s' % cdsout_fname2, 'matcher=sky',
                                'params=15', 'values1=%s %s' % (ra_c2, dec_c2),
                                'values2=%s_fake %s_fake' % (ra_c4, dec_c4),
-                               'find=best1', 'in1=%s' % cdsout_fname2, 'in2=aux.fits']
+                               'find=best1', 'in1=%s' % cdsout_fname2, 'in2=intermediates/aux.fits']
                         print(' '.join(cmd))
                         subprocess.run(cmd, check=True)
                         result = Table.read(cdsout_fname2)
@@ -449,7 +449,7 @@ if __name__ == "__main__":
                 nmatch = len(Table.read(cdsout_fname2))
                 
                 #Run Nway
-                skip_this = 0#(os.path.isfile('example-%s-%s-fake.fits'%(cds_name,xname)) and Table.read('example-%s-%s-fake.fits'%(cds_name,xname)).meta['PAR_NWAY']==param)
+                skip_this = 0#(os.path.isfile('nway_results/example-%s-%s-fake.fits'%(cds_name,xname)) and Table.read('nway_results/example-%s-%s-fake.fits'%(cds_name,xname)).meta['PAR_NWAY']==param)
                 if not(skip_nway) and not(skip_this):
                     subprocess.run(['nway-write-header.py',
                                     input_fname.replace('.fits', '-fake.fits'),
@@ -457,37 +457,37 @@ if __name__ == "__main__":
                     subprocess.run(['nway-write-header.py', cdsout_fname2, cds_name,
                                     '%.2f' % (cds_cov[iwv][icds]*nmatch/cds_ntot[iwv][icds])], check=True)
 
-                    use_mag = 'bias_%s_%s'%(cds_name.upper(),['Rmag','W1mag'][iwv]) in Table.read('example-%s-%s.fits'%(cds_name,xname)).colnames
+                    use_mag = 'bias_%s_%s'%(cds_name.upper(),['Rmag','W1mag'][iwv]) in Table.read('nway_results/example-%s-%s.fits'%(cds_name,xname)).colnames
                     if use_mag:
                         cmd = ['nway.py', input_fname.replace('.fits', '-fake.fits'),
                                ':%s' % err_c1, cdsout_fname2, '0.1',
-                               '--out=example-%s-%s-fake.fits' % (cds_name, xname),
+                               '--out=nway_results/example-%s-%s-fake.fits' % (cds_name, xname),
                                '--radius', '%.1f' % radius,
                                '--mag', '%s:%s' % (cds_name.upper(), ["Rmag","W1mag"][iwv]),
-                               '%s_%s_fit.txt' % (cds_name.upper(), ["Rmag","W1mag"][iwv])]
+                               'nway_results/%s_%s_fit.txt' % (cds_name.upper(), ["Rmag","W1mag"][iwv])]
                     else:
                         cmd = ['nway.py', input_fname.replace('.fits', '-fake.fits'),
                                ':%s' % err_c1, cdsout_fname2, '0.1',
-                               '--out=example-%s-%s-fake.fits' % (cds_name, xname),
+                               '--out=nway_results/example-%s-%s-fake.fits' % (cds_name, xname),
                                '--radius', '%.1f' % radius]
 
                     print(' '.join(cmd))
                     subprocess.run(cmd, check=True)
-                    result = Table.read('example-%s-%s-fake.fits'%(cds_name,xname))
+                    result = Table.read('nway_results/example-%s-%s-fake.fits'%(cds_name,xname))
                     result.meta.update({"PAR_NWAY":param})
-                    result.write('example-%s-%s-fake.fits'%(cds_name,xname),overwrite=True)
+                    result.write('nway_results/example-%s-%s-fake.fits'%(cds_name,xname),overwrite=True)
                     
                     ##Compare actual/fake with Nway to calibrate a p_any cutoff
                     cmd = ['nway-calibrate-cutoff.py',
-                           'example-%s-%s.fits' % (cds_name, xname),
-                           'example-%s-%s-fake.fits' % (cds_name, xname)]
+                           'nway_results/example-%s-%s.fits' % (cds_name, xname),
+                           'nway_results/example-%s-%s-fake.fits' % (cds_name, xname)]
                     print(' '.join(cmd))
                     subprocess.run(cmd, check=True)
                     
             print('removing secure matches')
-            example_fname = 'example-%s-%s.fits'%(cds_name,xname)
+            example_fname = 'nway_results/example-%s-%s.fits'%(cds_name,xname)
             result = Table.read(example_fname)
-            cutoff = np.loadtxt('example-%s-%s.fits_p_any_cutoffquality.txt'
+            cutoff = np.loadtxt('nway_results/example-%s-%s.fits_p_any_cutoffquality.txt'
                                 %(cds_name,xname))[-1,-1]
             result = np.asarray(result[id_c3][((result['p_any']>max(cutoff,0.001))*(result['match_flag']==1))])
             aux_keep = np.intersect1d(np.asarray(aux[id_c1]),
@@ -499,7 +499,7 @@ if __name__ == "__main__":
             aux_new[dec_c1].name = dec_c4
             aux_new[ra_c1+'_fake'].name = ra_c4+'_fake'
             aux_new[dec_c1+'_fake'].name = dec_c4+'_fake'
-            aux_new.write('aux.fits',overwrite=True)
+            aux_new.write('intermediates/aux.fits',overwrite=True)
                 
         
         results = []
@@ -507,10 +507,10 @@ if __name__ == "__main__":
         for icds in range(len(cds_tables[iwv])):
             cds_name = cds_names[iwv][icds]
             print(cds_name)
-            example_fname = 'example-%s-%s.fits'%(cds_name,xname)
+            example_fname = 'nway_results/example-%s-%s.fits'%(cds_name,xname)
             result = Table.read(example_fname)
             print('applying cutoff')
-            cutoff = np.loadtxt('example-%s-%s.fits_p_any_cutoffquality.txt'
+            cutoff = np.loadtxt('nway_results/example-%s-%s.fits_p_any_cutoffquality.txt'
                                 %(cds_name,xname))[-1,-1]
             result = result[(result['p_any']>max(cutoff,0.001))*(result['match_flag']==1)]
             print('removing unnecessary columns')
@@ -542,7 +542,7 @@ if __name__ == "__main__":
         result = vstack(results)
         firstind = np.unique(result[id_c1],return_index=True)[1]
         result = result[firstind]
-        output_table = Table.read("%s_with_counterparts.fits"%xname)
+        output_table = Table.read("intermediates/%s_with_counterparts.fits"%xname)
         id_c1_ind = np.intersect1d(np.asarray(output_table[id_c1]),
                                    np.asarray(result[id_c1]),
                                    return_indices=True)[1:]
@@ -559,7 +559,7 @@ if __name__ == "__main__":
             else:
                 aux_new.add_column(np.nan,name=col)
         result = vstack([result,aux_new])
-        result.write('%s_with_counterparts.fits'%(xname), overwrite=True)
+        result.write('intermediates/%s_with_counterparts.fits'%(xname), overwrite=True)
         print('done')
     
   
