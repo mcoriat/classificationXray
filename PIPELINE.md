@@ -29,7 +29,8 @@ classificationXray/
     auto_xlinks.py                Step 2 — X-ray cross-linking (optional)
     auto_gaiaglade.py             Step 3 — GLADE + Gaia enrichment
     auto_classes.py               Step 4 — training sample identification
-    classify_new.py               Step 5 — Bayesian classification
+    classify_new_fast.py          Step 5 — Bayesian classification (vectorized)
+    classify_new.py               Original classifier (kept for reference)
     add_descriptions_and_convert.py Step 6 — FITS conversion + metadata
     makedistrib.py                KDE distribution computation (called by step 5)
     plotdistrib.py                Distribution plotting
@@ -250,24 +251,24 @@ CDS Vizier + Simbad (via STILTS `cdsskymatch`) — requires internet
 **Goal:** Classify all 818,815 sources using Naive Bayes with KDE-estimated
 probability distributions, per-category weighting, and missing value handling.
 
-**Script:** `classify_new.py`
+**Script:** `classify_new_fast.py` (vectorized drop-in replacement for `classify_new.py`)
 
 **What it does:**
-1. **FITS to CSV conversion** — reads the input FITS, adds hardness ratios and extent
-   columns from the stacked catalogue, writes CSV
+1. **Direct FITS I/O** — reads the input FITS directly into numpy (no CSV roundtrip),
+   merges hardness ratios and extent columns from the stacked catalogue in memory
 2. **Property configuration** — reads the `.in` file defining which columns to use,
    their weights, categories, and scales
 3. **KDE estimation** — computes probability density distributions for each
    property x class combination on the training sample (via `makedistrib.py`)
-4. **Classification** — for each source, computes posterior probabilities
-   P(class | properties) using Naive Bayes with:
+4. **Vectorized classification** — computes posterior probabilities
+   P(class | properties) for all sources simultaneously using log-space matrix
+   operations (replaces the per-source Python loop):
    - Per-property likelihoods interpolated from KDE curves
    - Auto-weights from measurement errors (1/sigma)
    - Category-level weighting (global_coeffs in configfile.ini)
    - Missing value probabilities (P(property exists | class))
    - Class priors (trueprop in configfile.ini)
-5. **Output** — writes classified catalogue with probabilities, margins, and
-   alternative classifications
+5. **Output** — writes classified catalogue as FITS, CSV, and ECSV directly
 
 ### Properties used (5XMM-DR15 run)
 
@@ -296,18 +297,18 @@ trueprop: [0.55, 0.20, 0.03, 0.02, 0.05, 0.05, 0.10]
 
 ```bash
 cd claxboi
-python3 classify_new.py
+python3 classify_new_fast.py
 ```
 
 ### Input
 - `intermediates/5XMM_with_counterparts_loc_typ.fits`
-- `../data/5XMM_DR15_stacked.fits` (for hardness ratios + extent)
+- `../data/5XMM_DR15_stacked.fits` (for hardness ratios + extent, merged automatically)
 - `intermediates/5XMM_with_counterparts_loc_typ.in` (property config)
 
 ### Output
-- `output/classification_5XMM_DR15.csv` — classification-only columns (~365 MB)
-- `output/classification_5XMM_DR15.fits` — same, in FITS (~296 MB)
-- `output/classification_5XMM_DR15_with_input.csv` — full table with input + classification (~1.0 GB)
+- `output/classification_5XMM_DR15.fits` — full table with input + classification columns
+- `output/classification_5XMM_DR15.csv` — classification-only columns
+- `output/classification_5XMM_DR15_with_input.csv` — full table in ECSV format
 - `output/classification_5XMM_DR15.metrics` — performance metrics on training sample
 - `classif/distrib_KDE_5XMM/*.dat` — KDE probability distributions (one per property)
 - `classif/distrib_KDE_5XMM/*.png` — distribution plots
@@ -326,7 +327,9 @@ python3 classify_new.py
 | `PbaC0_location`-`PbaC6_variability` | Per-category likelihoods per class |
 
 ### Runtime
-**~1-2 hours** (KDE estimation + classification of 818K sources)
+**~1 minute** with precomputed distributions (`compute_distrib: 0`),
+**~5-10 minutes** with KDE re-estimation (`compute_distrib: 1`).
+Classification itself takes ~2 seconds for 818K sources.
 
 ---
 
@@ -379,14 +382,14 @@ python3 auto_gaiaglade.py               # ~20-30 min
 # 4. Training sample identification
 python3 auto_classes.py                  # ~30-45 min
 
-# 5. Bayesian classification
-python3 classify_new.py                  # ~1-2 hours
+# 5. Bayesian classification (vectorized)
+python3 classify_new_fast.py             # ~1-10 min
 
 # 6. Add metadata and convert to FITS
 python3 add_descriptions_and_convert.py  # ~5 min
 ```
 
-**Total runtime: ~4-9 hours** (dominated by NWAY cross-matching and classification)
+**Total runtime: ~3-7 hours** (dominated by NWAY cross-matching)
 
 ### Final product
 `output/classification_5XMM_DR15_with_input.fits`
